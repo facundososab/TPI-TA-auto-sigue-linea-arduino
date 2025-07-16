@@ -21,7 +21,8 @@ int ultimoError = 0;
 // === Velocidades ===
 const int VELOCIDAD_BASE   = 150;
 const int VELOCIDAD_MAX    = 255;
-const int VELOCIDAD_ATRAS  = -100;
+const int VELOCIDAD_MIN    = 100;   // Mínimo útil
+const int VELOCIDAD_ATRAS  = -200;  // Para giros en eje más marcados
 
 void setup() {
   pinMode(sensorI, INPUT);
@@ -38,69 +39,46 @@ void setup() {
 }
 
 void loop() {
-  const int i = digitalRead(sensorI);
-  const int m = digitalRead(sensorM);
-  const int d = digitalRead(sensorD);
+  int i = digitalRead(sensorI);
+  int m = digitalRead(sensorM);
+  int d = digitalRead(sensorD);
 
-  int velI, velD;
+  int error = calcularError(i, m, d);
 
-  // === Casos especiales ===
-  if (i && m && d) {                    // Todos detectan
-    velI = VELOCIDAD_BASE;
-    velD = VELOCIDAD_BASE;
-  } else if (!i && !m && !d) {         // Ninguno detecta
-    velI = VELOCIDAD_BASE;
-    velD = VELOCIDAD_BASE;
-  } else if (i && !m && d) {           // Solo laterales
-    velI = VELOCIDAD_BASE;
-    velD = VELOCIDAD_BASE;
-  } else if (i && m && !d) {           // Curva cerrada izquierda
-    velI = VELOCIDAD_ATRAS;
-    velD = VELOCIDAD_MAX;
-  } else if (!i && m && d) {           // Curva cerrada derecha
-    velI = VELOCIDAD_MAX;
-    velD = VELOCIDAD_ATRAS;
-  } else if (i && !m && !d) {          // Solo izquierda
-    velI = VELOCIDAD_ATRAS;
-    velD = VELOCIDAD_MAX;
-  } else if (!i && !m && d) {          // Solo derecha
-    velI = VELOCIDAD_MAX;
-    velD = VELOCIDAD_ATRAS;
-  } else {
-    // === Caso "normal": aplicar PID ===
-    int error = calcularError(i, m, d);
-    P = error;
-    I += error;
-    D = error - ultimoError;
-    ultimoError = error;
+  // === Controlador PID ===
+  P = error;
+  I += error;
+  D = error - ultimoError;
+  ultimoError = error;
 
-    if (abs(error) < 50) I = 0; // Anti-windup
+  // Anti-windup: resetear I cuando está cerca del centro
+  if (abs(error) < 50) I = 0;
 
-    int PID = -(P * Kp + I * Ki + D * Kd); // Corrección invertida
+  int PID = -(P * Kp + I * Ki + D * Kd);  // Corregimos dirección
 
-    velI = VELOCIDAD_BASE - PID;
-    velD = VELOCIDAD_BASE + PID;
-  }
+  // === Salidas a motores ===
+  int velI = VELOCIDAD_BASE - PID;
+  int velD = VELOCIDAD_BASE + PID;
 
   cambiarVelocidad(velI, velD);
 }
 
-// === Calcula el error lógico para el PID ===
+// === Cálculo de error lógico para PID ===
 int calcularError(int i, int m, int d) {
   if (!i &&  m && !d) return 0;       // Solo medio
   if ( i && !m && !d) return -1000;   // Solo izquierda
   if (!i && !m &&  d) return 1000;    // Solo derecha
-  if ( i &&  m && !d) return -500;    // Izquierda + medio
-  if (!i &&  m &&  d) return 500;     // Derecha + medio
+  if ( i &&  m && !d) return -1500;   // Curva cerrada izquierda
+  if (!i &&  m &&  d) return 1500;    // Curva cerrada derecha
+  if ( i && !m &&  d) return 0;       // I + D → mantener centro
+  if (!i && !m && !d) return 0;       // Ninguno → mantener
+  if ( i &&  m &&  d) return 0;       // Todos → mantener
   return 0;
 }
 
-// === Controla motores según la velocidad (incluye reversa) ===
+// === Controla motores (incluye reversa y PWM mínimo útil) ===
 void cambiarVelocidad(int velI, int velD) {
-  // Umbral mínimo para que los motores realmente giren (evita que se queden clavados)
-  const int PWM_MIN = 100;
-
-  // Motor izquierdo
+  // Lógica motor izquierdo
   if (velI >= 0) {
     digitalWrite(mPin1, HIGH);
     digitalWrite(mPin2, LOW);
@@ -110,7 +88,7 @@ void cambiarVelocidad(int velI, int velD) {
     velI = -velI;
   }
 
-  // Motor derecho
+  // Lógica motor derecho
   if (velD >= 0) {
     digitalWrite(mPin3, HIGH);
     digitalWrite(mPin4, LOW);
@@ -120,14 +98,13 @@ void cambiarVelocidad(int velI, int velD) {
     velD = -velD;
   }
 
-  // Aplicar PWM con umbral mínimo
-  velI = constrain(velI, 0, 255);
-  velD = constrain(velD, 0, 255);
+  // PWM mínimo útil
+  velI = constrain(velI, 0, VELOCIDAD_MAX);
+  velD = constrain(velD, 0, VELOCIDAD_MAX);
 
-  if (velI > 0 && velI < PWM_MIN) velI = PWM_MIN;
-  if (velD > 0 && velD < PWM_MIN) velD = PWM_MIN;
+  if (velI > 0 && velI < VELOCIDAD_MIN) velI = VELOCIDAD_MIN;
+  if (velD > 0 && velD < VELOCIDAD_MIN) velD = VELOCIDAD_MIN;
 
   analogWrite(enablePin1y2, velI);
   analogWrite(enablePin3y4, velD);
 }
-
