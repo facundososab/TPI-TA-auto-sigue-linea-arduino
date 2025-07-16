@@ -1,105 +1,96 @@
-// ==== Sensores ====
-const int pinSensorI = 13;
-const int pinSensorM = 12;
-const int pinSensorD = 11;
+// Sensores
+const int sensorI = 13;
+const int sensorM = 12;
+const int sensorD = 11;
 
-// ==== Motor Izquierdo ====
-const int in1 = 6;
-const int in2 = 5;
-const int enableI = 2;
+// Motor izquierdo
+const int enablePin1y2 = 7;
+const int mPin1 = 6;
+const int mPin2 = 5;
 
-// ==== Motor Derecho ====
-const int in3 = 4;
-const int in4 = 3;
-const int enableD = 7;
+// Motor derecho
+const int mPin3 = 4;
+const int mPin4 = 3;
+const int enablePin3y4 = 2;
 
-// ==== PID ====
-const float Kp = 5, Ki = 0.5, Kd = 20;
-int P = 0, I = 0, D = 0;
+// PID
+const float Kp = 5.0;
+const float Ki = 0.5;
+const float Kd = 20.0;
+
+int P, I, D;
 int ultimoError = 0;
-
-// ==== Configuración general ====
-const int velocidadBase = 150;  // Menor a 255 para dejar margen al PID
-const int pwmMax = 255;
-const int pwmMin = 0;
+int integral = 0;
+int velocidadBase = 150;  // velocidad base
+int velocidadMax = 255;
 
 void setup() {
-  // Sensores
-  pinMode(pinSensorI, INPUT);
-  pinMode(pinSensorM, INPUT);
-  pinMode(pinSensorD, INPUT);
+  pinMode(sensorI, INPUT);
+  pinMode(sensorM, INPUT);
+  pinMode(sensorD, INPUT);
 
-  // Motores
-  pinMode(in1, OUTPUT); pinMode(in2, OUTPUT); pinMode(enableI, OUTPUT);
-  pinMode(in3, OUTPUT); pinMode(in4, OUTPUT); pinMode(enableD, OUTPUT);
+  pinMode(mPin1, OUTPUT);
+  pinMode(mPin2, OUTPUT);
+  pinMode(enablePin1y2, OUTPUT);
 
-  // Inicializamos todo en apagado
-  detenerMotores();
+  pinMode(mPin3, OUTPUT);
+  pinMode(mPin4, OUTPUT);
+  pinMode(enablePin3y4, OUTPUT);
+
+  Serial.begin(9600);  // Para debugging
 }
 
 void loop() {
-  // Leer sensores
-  int sI = digitalRead(pinSensorI);
-  int sM = digitalRead(pinSensorM);
-  int sD = digitalRead(pinSensorD);
+  bool S_I = digitalRead(sensorI);
+  bool S_M = digitalRead(sensorM);
+  bool S_D = digitalRead(sensorD);
 
-  // Obtener posición deseada
-  int posicionActual = calcularPosicion(sI, sM, sD);
-  int error = posicionActual - 1000;
+  int error;
 
-  // Control PID
+  // Calcular el error según sensores
+  if (S_I && !S_M && !S_D)        error = 2;
+  else if (S_I && S_M && !S_D)    error = 1;
+  else if (!S_I && S_M && !S_D)   error = 0;
+  else if (!S_I && S_M && S_D)    error = -1;
+  else if (!S_I && !S_M && S_D)   error = -2;
+  else if (!S_I && !S_M && !S_D)  error = ultimoError;  // línea perdida
+  else                            error = 0;  // caso I+D+M
+
+  // PID
   P = error;
-  I += error;
+  integral += error;
   D = error - ultimoError;
+
+  float ajuste = Kp * P + Ki * integral + Kd * D;
+
+  int velIzq = velocidadBase + ajuste;
+  int velDer = velocidadBase - ajuste;
+
+  // Limitar velocidades
+  velIzq = constrain(velIzq, 0, velocidadMax);
+  velDer = constrain(velDer, 0, velocidadMax);
+
+  moverMotores(velIzq, velDer);
+
   ultimoError = error;
 
-  int salidaPID = P * Kp + I * Ki + D * Kd;
+  // Debug
+  Serial.print("Error: "); Serial.print(error);
+  Serial.print(" | Ajuste: "); Serial.print(ajuste);
+  Serial.print(" | Vel I: "); Serial.print(velIzq);
+  Serial.print(" | Vel D: "); Serial.println(velDer);
 
-  // Calcular velocidades
-  int velD = constrain(velocidadBase + salidaPID, pwmMin, pwmMax);
-  int velI = constrain(velocidadBase - salidaPID, pwmMin, pwmMax);
-
-  moverMotores(velI, velD);
+  delay(10);
 }
 
-void moverMotores(int velI, int velD) {
-  // Motor Izquierdo
-  if (velI >= 0) {
-    digitalWrite(in1, HIGH);
-    digitalWrite(in2, LOW);
-  } else {
-    digitalWrite(in1, LOW);
-    digitalWrite(in2, HIGH);
-    velI = -velI;
-  }
+void moverMotores(int velIzq, int velDer) {
+  // Motor izquierdo (avanza)
+  digitalWrite(mPin1, HIGH);
+  digitalWrite(mPin2, LOW);
+  analogWrite(enablePin1y2, velIzq);
 
-  // Motor Derecho
-  if (velD >= 0) {
-    digitalWrite(in3, HIGH);
-    digitalWrite(in4, LOW);
-  } else {
-    digitalWrite(in3, LOW);
-    digitalWrite(in4, HIGH);
-    velD = -velD;
-  }
-
-  analogWrite(enableI, constrain(velI, pwmMin, pwmMax));
-  analogWrite(enableD, constrain(velD, pwmMin, pwmMax));
-}
-
-int calcularPosicion(int i, int m, int d) {
-  // Codificamos posibles combinaciones
-  if (i == LOW && m == HIGH && d == LOW)  return 1000;
-  if (i == LOW && m == LOW  && d == HIGH) return 2000;
-  if (i == HIGH && m == LOW && d == LOW)  return 0;
-  if (i == LOW && m == HIGH && d == HIGH) return 1500;
-  if (i == HIGH && m == HIGH && d == LOW) return 500;
-  if (i == HIGH && m == LOW && d == HIGH) return 1000; // Mantener recto
-  if (i == LOW && m == LOW && d == LOW)   return 1000; // Sin línea (recto)
-  return 1000; // Todos HIGH (probablemente intersección)
-}
-
-void detenerMotores() {
-  digitalWrite(in1, LOW); digitalWrite(in2, LOW); analogWrite(enableI, 0);
-  digitalWrite(in3, LOW); digitalWrite(in4, LOW); analogWrite(enableD, 0);
+  // Motor derecho (avanza)
+  digitalWrite(mPin3, HIGH);
+  digitalWrite(mPin4, LOW);
+  analogWrite(enablePin3y4, velDer);
 }
