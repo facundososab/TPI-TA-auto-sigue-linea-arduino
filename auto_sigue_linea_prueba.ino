@@ -97,13 +97,37 @@ int calcularError(int i, int m, int d) {
 
 // === Controla motores según la velocidad (incluye reversa) ===
 void cambiarVelocidad(int velI, int velD) {
+  // Umbral mínimo para que los motores realmente giren (evita que se queden clavados)
+  const int PWM_MIN = 100;
+
   // Motor izquierdo
-  digitalWrite(mPin1, velI >= 0 ? HIGH : LOW);
-  digitalWrite(mPin2, velI >= 0 ? LOW  : HIGH);
-  analogWrite(enablePin1y2, constrain(abs(velI), 0, 255));
+  if (velI >= 0) {
+    digitalWrite(mPin1, HIGH);
+    digitalWrite(mPin2, LOW);
+  } else {
+    digitalWrite(mPin1, LOW);
+    digitalWrite(mPin2, HIGH);
+    velI = -velI;
+  }
 
   // Motor derecho
-  digitalWrite(mPin3, velD >= 0 ? HIGH : LOW);
-  digitalWrite(mPin4, velD >= 0 ? LOW  : HIGH);
-  analogWrite(enablePin3y4, constrain(abs(velD), 0, 255));
+  if (velD >= 0) {
+    digitalWrite(mPin3, HIGH);
+    digitalWrite(mPin4, LOW);
+  } else {
+    digitalWrite(mPin3, LOW);
+    digitalWrite(mPin4, HIGH);
+    velD = -velD;
+  }
+
+  // Aplicar PWM con umbral mínimo
+  velI = constrain(velI, 0, 255);
+  velD = constrain(velD, 0, 255);
+
+  if (velI > 0 && velI < PWM_MIN) velI = PWM_MIN;
+  if (velD > 0 && velD < PWM_MIN) velD = PWM_MIN;
+
+  analogWrite(enablePin1y2, velI);
+  analogWrite(enablePin3y4, velD);
 }
+
