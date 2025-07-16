@@ -1,30 +1,34 @@
-// Sensores
+// === Sensores ===
 const int sensorI = 13;
 const int sensorM = 12;
 const int sensorD = 11;
 
-// Motor izquierdo
+// === Motor izquierdo ===
 const int enablePin1y2 = 7;
 const int mPin1 = 6;
 const int mPin2 = 5;
 
-// Motor derecho
+// === Motor derecho ===
+const int enablePin3y4 = 2;
 const int mPin3 = 4;
 const int mPin4 = 3;
-const int enablePin3y4 = 2;
 
-// Parámetros del controlador PID
-const float Kp = 5, Ki = 0.5, Kd = 20;
-int P, I, D;
-
+// === PID ===
+const float Kp = 0.7, Ki = 0.0005, Kd = 0.02;
+int P = 0, I = 0, D = 0;
 int ultimoError = 0;
-int velocidad = 255;
+
+// === Velocidades ===
+const int VELOCIDAD_BASE   = 255;
+const int VELOCIDAD_MAX    = 255;
+const int VELOCIDAD_MIN    = 100;   // Mínimo útil
+const int VELOCIDAD_ATRAS  = -200;  // Para giros en eje más marcados
 
 void setup() {
   pinMode(sensorI, INPUT);
   pinMode(sensorM, INPUT);
   pinMode(sensorD, INPUT);
- 
+
   pinMode(mPin1, OUTPUT);
   pinMode(mPin2, OUTPUT);
   pinMode(enablePin1y2, OUTPUT);
@@ -32,72 +36,75 @@ void setup() {
   pinMode(mPin3, OUTPUT);
   pinMode(mPin4, OUTPUT);
   pinMode(enablePin3y4, OUTPUT);
-
-  digitalWrite(mPin1, LOW);
-  digitalWrite(mPin2, LOW);
-  digitalWrite(enablePin1y2, LOW);
-
-  digitalWrite(mPin3, LOW);
-  digitalWrite(mPin4, LOW);
-  digitalWrite(enablePin3y4, LOW);
 }
 
 void loop() {
-  int inputMedio = digitalRead(sensorM);
-  int inputDerecha = digitalRead(sensorD);
-  int inputIzquierda = digitalRead(sensorI);
- 
-  int pos = posicion(inputIzquierda, inputMedio, inputDerecha);
- 
-  int error = pos - 1000;
+  int i = digitalRead(sensorI);
+  int m = digitalRead(sensorM);
+  int d = digitalRead(sensorD);
 
+  int error = calcularError(i, m, d);
+
+  // === Controlador PID ===
   P = error;
-  I = I + error;
+  I += error;
   D = error - ultimoError;
   ultimoError = error;
- 
-  int PID = P * Kp + I * Ki + D * Kd;
-  int motorD = velocidad + PID;
-  int motorI = velocidad - PID;
- 
-  if (motorD > 200) motorD = 200;
-  if (motorI > 200) motorI = 200;
-  if (motorD < -100) motorD = -100;
-  if (motorI < -100) motorI = -100;
 
-  cambiar_velocidad(motorD, motorI);
+  // Anti-windup: resetear I cuando está cerca del centro
+  if (abs(error) < 50) I = 0;
+
+  int PID = -(P * Kp + I * Ki + D * Kd);  // Corregimos dirección
+
+  // === Salidas a motores ===
+  int velI = VELOCIDAD_BASE - PID;
+  int velD = VELOCIDAD_BASE + PID;
+
+  cambiarVelocidad(velI, velD);
 }
 
-void cambiar_velocidad(int velD, int velI) {
-  if (velD < 0) {
-	digitalWrite(mPin1, LOW);
-	digitalWrite(mPin2, HIGH);
-	velD = -velD;
-  } else {
-	digitalWrite(mPin1, HIGH);
-	digitalWrite(mPin2, LOW);
-  }
- 
-  if (velI < 0) {
-	digitalWrite(mPin3, LOW);
-	digitalWrite(mPin4, HIGH);
-	velI = -velI;
-  } else {
-	digitalWrite(mPin3, HIGH);
-	digitalWrite(mPin4, LOW);
-  }
- 
-  analogWrite(enablePin1y2, velD);  
-  analogWrite(enablePin3y4, velI);
+// === Cálculo de error lógico para PID ===
+int calcularError(int i, int m, int d) {
+  if (!i &&  m && !d) return 0;       // Solo medio
+  if ( i && !m && !d) return -1000;   // Solo izquierda
+  if (!i && !m &&  d) return 1000;    // Solo derecha
+  if ( i &&  m && !d) return -1500;   // Curva cerrada izquierda
+  if (!i &&  m &&  d) return 1500;    // Curva cerrada derecha
+  if ( i && !m &&  d) return 0;       // I + D → mantener centro
+  if (!i && !m && !d) return 0;       // Ninguno → mantener
+  if ( i &&  m &&  d) return 0;       // Todos → mantener
+  return 0;
 }
 
-int posicion(int i, int c, int d) {
-  if (i == LOW && c == HIGH && d == LOW) return 1000;  // Detecta el sensor del medio (mantener recto)
-  if (i == LOW && c == LOW && d == HIGH) return 2000;  // Detecta el sensor derecho
-  if (i == HIGH && c == LOW && d == LOW) return 0; 	// Detecta el sensor de la izquierda
-  if (i == LOW && c == HIGH && d == HIGH) return 1500; // Detectan los sensores derecho y del medio
-  if (i == HIGH && c == HIGH && d == LOW) return 500;  // Detectan los sensores izquierdo y del medio
-  if (i == HIGH && c == LOW && d == HIGH) return 1000; // Detectan los sensores izquierdo y derecho (mantener recto)
-  if (i == LOW && c == LOW && d == LOW) return 1000;   // Ningún sensor detecta (mantener recto)
-  return 1000;                                      	// Todos los sensores detectan (mantener recto)
+// === Controla motores (incluye reversa y PWM mínimo útil) ===
+void cambiarVelocidad(int velI, int velD) {
+  // Lógica motor izquierdo
+  if (velI >= 0) {
+    digitalWrite(mPin1, HIGH);
+    digitalWrite(mPin2, LOW);
+  } else {
+    digitalWrite(mPin1, LOW);
+    digitalWrite(mPin2, HIGH);
+    velI = -velI;
+  }
+
+  // Lógica motor derecho
+  if (velD >= 0) {
+    digitalWrite(mPin3, HIGH);
+    digitalWrite(mPin4, LOW);
+  } else {
+    digitalWrite(mPin3, LOW);
+    digitalWrite(mPin4, HIGH);
+    velD = -velD;
+  }
+
+  // PWM mínimo útil
+  velI = constrain(velI, 0, VELOCIDAD_MAX);
+  velD = constrain(velD, 0, VELOCIDAD_MAX);
+
+  if (velI > 0 && velI < VELOCIDAD_MIN) velI = VELOCIDAD_MIN;
+  if (velD > 0 && velD < VELOCIDAD_MIN) velD = VELOCIDAD_MIN;
+
+  analogWrite(enablePin1y2, velI);
+  analogWrite(enablePin3y4, velD);
 }
