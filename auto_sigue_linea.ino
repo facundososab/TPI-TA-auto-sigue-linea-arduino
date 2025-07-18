@@ -54,11 +54,11 @@ void loop() {
   // Anti-windup: resetear I cuando está cerca del centro
   if (abs(error) < 50) I = 0;
 
-  int PID = -(P * Kp + I * Ki + D * Kd);  // Corregimos dirección
+  int PID = P * Kp + I * Ki + D * Kd;  // Corregimos dirección
 
   // === Salidas a motores ===
-  int velI = VELOCIDAD_BASE - PID;
-  int velD = VELOCIDAD_BASE + PID;
+  int velI = VELOCIDAD_BASE + PID;
+  int velD = VELOCIDAD_BASE - PID;
 
   cambiarVelocidad(velI, velD);
 }
