@@ -14,12 +14,12 @@ const int mPin3 = 4;
 const int mPin4 = 3;
 
 // === PID ===
-const float Kp = 0.7, Ki = 0.0005, Kd = 0.02;
+const float Kp = 7, Ki = 0.005, Kd = 0.2;
 int P = 0, I = 0, D = 0;
 int ultimoError = 0;
 
 // === Velocidades ===
-const int VELOCIDAD_BASE   = 255;
+const int VELOCIDAD_BASE   = 200;
 const int VELOCIDAD_MAX    = 255;
 const int VELOCIDAD_MIN    = 100;   // Mínimo útil
 const int VELOCIDAD_ATRAS  = -200;  // Para giros en eje más marcados
@@ -66,10 +66,10 @@ void loop() {
 // === Cálculo de error lógico para PID ===
 int calcularError(int i, int m, int d) {
   if (!i &&  m && !d) return 0;       // Solo medio
-  if ( i && !m && !d) return -1000;   // Solo izquierda
-  if (!i && !m &&  d) return 1000;    // Solo derecha
-  if ( i &&  m && !d) return -1500;   // Curva cerrada izquierda
-  if (!i &&  m &&  d) return 1500;    // Curva cerrada derecha
+  if ( i && !m && !d) return -100;   // Solo izquierda
+  if (!i && !m &&  d) return 100;    // Solo derecha
+  if ( i &&  m && !d) return -150;   // Curva cerrada izquierda
+  if (!i &&  m &&  d) return 150;    // Curva cerrada derecha
   if ( i && !m &&  d) return 0;       // I + D → mantener centro
   if (!i && !m && !d) return 0;       // Ninguno → mantener
   if ( i &&  m &&  d) return 0;       // Todos → mantener
